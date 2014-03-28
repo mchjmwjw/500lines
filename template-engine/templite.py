@@ -78,7 +78,6 @@ class Templite(object):
         These are good for filters and global values.
 
         """
-        self.text = text
         self.context = {}
         for context in contexts:
             self.context.update(context)
@@ -86,26 +85,32 @@ class Templite(object):
         self.all_vars = set()
         self.loop_vars = set()
 
+        self.start_code()
+        self.compile_code(text)
+
+    def start_code(self):
         # We construct a function in source form, then compile it and hold onto
         # it, and execute it to render the template.
-        code = CodeBuilder()
+        self.code = CodeBuilder()
 
-        code.add_line("def render(ctx, dot):")
-        code.indent()
-        vars_code = code.add_section()
-        code.add_line("result = []")
-        code.add_line("a = result.append")
-        code.add_line("e = result.extend")
-        code.add_line("s = str")
+        self.code.add_line("def render(ctx, dot):")
+        self.code.indent()
+        self.vars_code = self.code.add_section()
+        self.code.add_line("result = []")
+        self.code.add_line("a = result.append")
+        self.code.add_line("e = result.extend")
+        self.code.add_line("s = str")
 
-        buffered = []
-        def flush_output():
-            """Force `buffered` to the code builder."""
-            if len(buffered) == 1:
-                code.add_line("a(%s)" % buffered[0])
-            elif len(buffered) > 1:
-                code.add_line("e([%s])" % ",".join(buffered))
-            del buffered[:]
+    def flush_output(self):
+        """Force `buffered` to the code builder."""
+        if len(self.buffered) == 1:
+            self.code.add_line("a(%s)" % self.buffered[0])
+        elif len(self.buffered) > 1:
+            self.code.add_line("e([%s])" % ",".join(self.buffered))
+        self.buffered = []
+
+    def compile_code(self, text):
+        self.buffered = []
 
         # Split the text to form a list of tokens.
         tokens = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
@@ -114,58 +119,58 @@ class Templite(object):
         for token in tokens:
             if token.startswith('{{'):
                 # An expression to evaluate.
-                buffered.append("s(%s)" % self.expr_code(token[2:-2].strip()))
+                self.buffered.append("s(%s)" % self.expr_code(token[2:-2].strip()))
             elif token.startswith('{#'):
                 # Comment: ignore it and move on.
                 continue
             elif token.startswith('{%'):
                 # Action tag: split into words and parse further.
-                flush_output()
+                self.flush_output()
                 words = token[2:-2].strip().split()
                 if words[0] == 'if':
                     # An if statement: evaluate the expression to determine if.
                     if len(words) != 2:
                         self.syntax_error("Don't understand if", token)
                     ops_stack.append('if')
-                    code.add_line("if %s:" % self.expr_code(words[1]))
-                    code.indent()
+                    self.code.add_line("if %s:" % self.expr_code(words[1]))
+                    self.code.indent()
                 elif words[0] == 'for':
                     # A loop: iterate over expression result.
                     if len(words) != 4 or words[2] != 'in':
                         self.syntax_error("Don't understand for", token)
                     ops_stack.append('for')
                     self.loop_vars.add(words[1])
-                    code.add_line(
+                    self.code.add_line(
                         "for c_%s in %s:" % (
                             words[1],
                             self.expr_code(words[3])
                         )
                     )
-                    code.indent()
+                    self.code.indent()
                 elif words[0].startswith('end'):
                     # Endsomething.  Pop the ops stack
                     end_what = words[0][3:]
                     if ops_stack[-1] != end_what:
                         self.syntax_error("Mismatched end tag", end_what)
                     ops_stack.pop()
-                    code.dedent()
+                    self.code.dedent()
                 else:
                     self.syntax_error("Don't understand tag", words[0])
             else:
                 # Literal content.  If it isn't empty, output it.
                 if token:
-                    buffered.append("%r" % token)
-        flush_output()
+                    self.buffered.append("%r" % token)
+        self.flush_output()
 
         for var_name in self.all_vars - self.loop_vars:
-            vars_code.add_line("c_%s = ctx[%r]" % (var_name, var_name))
+            self.vars_code.add_line("c_%s = ctx[%r]" % (var_name, var_name))
 
         if ops_stack:
             self.syntax_error("Unmatched action tag", ops_stack[-1])
 
-        code.add_line("return ''.join(result)")
-        code.dedent()
-        self.render_function = code.get_function('render')
+        self.code.add_line("return ''.join(result)")
+        self.code.dedent()
+        self.render_function = self.code.get_function('render')
 
     def syntax_error(self, msg, thing):
         """Raise a syntax error using `msg`, and showing `thing`."""
