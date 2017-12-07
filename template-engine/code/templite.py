@@ -250,3 +250,4 @@ class Templite(object):
             if callable(value):
                 value = value()
         return value
+
