@@ -138,7 +138,7 @@ class Templite(object):
                 continue
             elif token.startswith('{{'):
                 # An expression to evaluate.
-                expr = self._expr_code(token[2:-2].strip())
+                expr = self._expr_code(token[2:-2].strip()) # strip() 移除两头空格
                 buffered.append("to_str(%s)" % expr)
             elif token.startswith('{%'):
                 # Action tag: split into words and parse further.

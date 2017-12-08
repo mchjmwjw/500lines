@@ -1,7 +1,7 @@
-import time
+import time, os
 from templite import Templite, TempliteSyntaxError
 
-f = open('muban.wjw', 'r')
+f = open(os.getcwd() + '\\500lines\\template-engine\\code\\muban.wjw', 'r')
 dat = f.read()
 f.close()
 templite = Templite(dat, {'upper': str.upper})
